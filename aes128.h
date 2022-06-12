@@ -5,7 +5,7 @@
  * @version 0.9.2
  * @date 2022-02-06
  *
- * @copyright Copyright (c) 2022 Jason Conway. All rights reserved.
+ * @copyright Copyright (c) 2022 Jason Conway.
  *
  */
 
@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <sys/types.h>
 
 enum AES128
 {
