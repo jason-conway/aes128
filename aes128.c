@@ -8,7 +8,7 @@
  * @ref https://en.wikipedia.org/wiki/Finite_field_arithmetic
  * @ref https://en.wikipedia.org/wiki/One-key_MAC
  * @ref https://en.wikipedia.org/wiki/AES_key_schedule
- * @version 0.9.2
+ * @version 0.9.3
  * @date 2022-02-06
  *
  * @copyright Copyright (c) 2022 Jason Conway.
@@ -17,8 +17,7 @@
 
 #include "aes128.h"
 
-typedef union state_t
-{
+typedef union state_t {
 	uint8_t s[4][4];
 } state_t;
 
@@ -99,7 +98,7 @@ static void aes_key_expansion(uint8_t *round_key, const uint8_t *key)
 		}
 
 		// Rotate and substitute
-		if (i % 4 == 0) {
+		if ((!i % 4)) {
 			const uint8_t _word = word[0];
 			word[0] = word[1];
 			word[1] = word[2];
@@ -237,12 +236,11 @@ static void aes_xcrypt(state_t *state, const uint8_t *round_key, bool decrypt)
 {
 	if (decrypt) {
 		aes_add_round_key(state, AES_ROUNDS, round_key);
-
-		for (ssize_t i = AES_ROUNDS - 1;; i--) {
+		for (size_t i = 0;; i++) {
 			aes_shift_rows(state, true);
 			aes_substitute_bytes(state, true);
-			aes_add_round_key(state, i, round_key);
-			if (!i) {
+			aes_add_round_key(state, AES_ROUNDS - 1 - i, round_key);
+			if (i == AES_ROUNDS - 1) {
 				break;
 			}
 			aes_mix_columns(state, true);
@@ -250,8 +248,7 @@ static void aes_xcrypt(state_t *state, const uint8_t *round_key, bool decrypt)
 	}
 	else {
 		aes_add_round_key(state, 0, round_key);
-
-		for (ssize_t i = 1;; i++) {
+		for (size_t i = 1;; i++) {
 			aes_substitute_bytes(state, false);
 			aes_shift_rows(state, false);
 			if (i == AES_ROUNDS) {

@@ -2,7 +2,7 @@
  * @file aes128.h
  * @author Jason Conway (jpc@jasonconway.dev)
  * @brief A fresh implementation of AES and AES-CMAC following FIPS 197 and RFC4493
- * @version 0.9.2
+ * @version 0.9.3
  * @date 2022-02-06
  *
  * @copyright Copyright (c) 2022 Jason Conway.
@@ -16,16 +16,14 @@
 #include <string.h>
 #include <stdbool.h>
 
-enum AES128
-{
+enum AES128 {
 	AES_ROUNDS = 10,
 	AES_BLOCK_SIZE = 16,
 	AES_KEY_LEN = 16,
 	CMAC_KEY_LEN = 16,
 };
 
-typedef struct aes128_t
-{
+typedef struct aes128_t {
 	uint8_t round_key[AES_BLOCK_SIZE * (AES_ROUNDS + 1)];
 	uint8_t iv[AES_BLOCK_SIZE];
 } aes128_t;
