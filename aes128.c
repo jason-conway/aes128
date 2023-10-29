@@ -22,14 +22,11 @@ typedef union state_t {
 } state_t;
 
 // Precalculated lookup table instead of recursive polynomial multiplication
-static uint8_t galois_multiply(uint8_t x, uint8_t y)
+static uint8_t gfmul(uint8_t x, uint8_t y)
 {
-	static const uint8_t polynomial_mask[8] = { 0x00, 0x1b, 0x36, 0x2d, 0x6c, 0x77, 0x5a, 0x41 };
-	uint16_t r = ((x * (y & 0x01)) ^
-				  (x * (y & 0x02)) ^
-				  (x * (y & 0x04)) ^
-				  (x * (y & 0x08)));
-	return (uint8_t)(r ^ polynomial_mask[r >> 8]);
+	static const uint8_t mask[8] = { 0x00, 0x1b, 0x36, 0x2d, 0x6c, 0x77, 0x5a, 0x41 };
+	uint16_t r = ((x * (y & 0x1)) ^ (x * (y & 0x2)) ^ (x * (y & 0x4)) ^ (x * (y & 0x8)));
+	return (uint8_t)(r ^ mask[r >> 8]);
 }
 
 static void xor128(uint8_t *a, const uint8_t *b)
@@ -92,13 +89,13 @@ static void aes_key_expansion(uint8_t *round_key, const uint8_t *key)
 	memcpy(round_key, key, AES_KEY_LEN);
 
 	uint8_t word[4];
-	for (size_t i = 4; i < 44; i++) {
+	for (size_t i = AES_WORD_COUNT; i < (4 * (AES_ROUNDS + 1)); i++) {
 		for (size_t j = 0; j < 4; j++) {
 			word[j] = round_key[4 * (i - 1) + j];
 		}
 
 		// Rotate and substitute
-		if (!(i % 4)) {
+		if (!(i % AES_WORD_COUNT)) {
 			const uint8_t _word = word[0];
 			word[0] = word[1];
 			word[1] = word[2];
@@ -113,7 +110,7 @@ static void aes_key_expansion(uint8_t *round_key, const uint8_t *key)
 		}
 
 		for (size_t j = 0; j < 4; j++) {
-			round_key[(4 * i) + j] = round_key[(4 * (i - 4)) + j] ^ word[j];
+			round_key[(4 * i) + j] = round_key[(4 * (i - AES_WORD_COUNT)) + j] ^ word[j];
 		}
 	}
 }
@@ -192,33 +189,15 @@ static void aes_mix_columns(state_t *ctx, bool invert)
 				ctx->s[i][3]
 			};
 
-			ctx->s[i][0] = (galois_multiply(s[0], 0x0e) ^
-							galois_multiply(s[1], 0x0b) ^
-							galois_multiply(s[2], 0x0d) ^
-							galois_multiply(s[3], 0x09));
-
-			ctx->s[i][1] = (galois_multiply(s[0], 0x09) ^
-							galois_multiply(s[1], 0x0e) ^
-							galois_multiply(s[2], 0x0b) ^
-							galois_multiply(s[3], 0x0d));
-
-			ctx->s[i][2] = (galois_multiply(s[0], 0x0d) ^
-							galois_multiply(s[1], 0x09) ^
-							galois_multiply(s[2], 0x0e) ^
-							galois_multiply(s[3], 0x0b));
-
-			ctx->s[i][3] = (galois_multiply(s[0], 0x0b) ^
-							galois_multiply(s[1], 0x0d) ^
-							galois_multiply(s[2], 0x09) ^
-							galois_multiply(s[3], 0x0e));
+			ctx->s[i][0] = gfmul(s[0], 0xe) ^ gfmul(s[1], 0xb) ^ gfmul(s[2], 0xd) ^ gfmul(s[3], 0x9);
+			ctx->s[i][1] = gfmul(s[0], 0x9) ^ gfmul(s[1], 0xe) ^ gfmul(s[2], 0xb) ^ gfmul(s[3], 0xd);
+			ctx->s[i][2] = gfmul(s[0], 0xd) ^ gfmul(s[1], 0x9) ^ gfmul(s[2], 0xe) ^ gfmul(s[3], 0xb);
+			ctx->s[i][3] = gfmul(s[0], 0xb) ^ gfmul(s[1], 0xd) ^ gfmul(s[2], 0x9) ^ gfmul(s[3], 0xe);
 		}
 	}
 	else {
 		for (size_t i = 0; i < 4; i++) {
-			uint8_t s = (ctx->s[i][0] ^
-						 ctx->s[i][1] ^
-						 ctx->s[i][2] ^
-						 ctx->s[i][3]);
+			uint8_t s = ctx->s[i][0] ^ ctx->s[i][1] ^ ctx->s[i][2] ^ ctx->s[i][3];
 			uint8_t c0 = ctx->s[i][0];
 
 			for (size_t j = 0; j < 4; j++) {
