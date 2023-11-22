@@ -5,7 +5,7 @@
  * @version 0.9.3
  * @date 2022-02-06
  *
- * @copyright Copyright (c) 2022 Jason Conway.
+ * @copyright Copyright (c) 2022 - 2023 Jason Conway.
  *
  */
 
@@ -22,6 +22,7 @@ enum AES128 {
 	AES_BLOCK_SIZE = 16,
 	AES_KEY_LEN = 16,
 	CMAC_KEY_LEN = 16,
+	AES_KEY_BITS = 8 * AES_KEY_LEN,
 };
 
 typedef struct aes128_t {
