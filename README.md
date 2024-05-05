@@ -36,3 +36,7 @@ void aes128_cmac(const aes128_t *ctx, const uint8_t *msg, size_t length, uint8_t
 where `msg` points to `length` bytes to be used, computing a tag at `mac`. Unlike with aes128_encrypt() and aes128_decrypt(), `length` does not have to be a minimum of 16-bytes.
 
 See [aes128.h](aes128.h) for additional API reference
+
+# Sample Usage:
+
+See [validation.c](validation.c) for a usage example.

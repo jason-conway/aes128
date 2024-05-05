@@ -8,10 +8,10 @@
  * @ref https://en.wikipedia.org/wiki/Finite_field_arithmetic
  * @ref https://en.wikipedia.org/wiki/One-key_MAC
  * @ref https://en.wikipedia.org/wiki/AES_key_schedule
- * @version 0.9.3
+ * @version 0.9.4
  * @date 2022-02-06
  *
- * @copyright Copyright (c) 2022 - 2023 Jason Conway.
+ * @copyright Copyright (c) 2022 - 2024 Jason Conway.
  *
  */
 
@@ -152,8 +152,8 @@ static void aes_substitute_bytes(state_t *ctx, bool invert)
 // Cyclically shift the last three rows of the State with different offsets
 static void aes_shift_rows(state_t *ctx, bool invert)
 {
-    uint8_t *r1map = invert ? (uint8_t []) { 3, 2, 1, 0 } : (uint8_t []) { 0, 1, 2, 3 };
-    uint8_t *r3map = invert ? (uint8_t []) { 0, 3, 2, 1 } : (uint8_t []) { 0, 1, 2, 3 };
+    uint8_t *r1map = invert ? (uint8_t[]) { 3, 2, 1, 0 } : (uint8_t[]) { 0, 1, 2, 3 };
+    uint8_t *r3map = invert ? (uint8_t[]) { 0, 3, 2, 1 } : (uint8_t[]) { 0, 1, 2, 3 };
 
     // Cycle the first row 1 column to the left or right
     uint8_t s = ctx->s[r1map[0]][1];
