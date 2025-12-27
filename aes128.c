@@ -247,6 +247,17 @@ void aes128_cmac(const aes128_t *ctx, const uint8_t *msg, size_t length, uint8_t
 
     // MAC generation (pg 7 RFC 4493)
     uint8_t block[AES_BLOCK_SIZE] = { 0 };
+
+    // Handle zero-length message
+    if (!length) {
+        aes_generate_subkey(L);
+        L[0] ^= AES_KEY_BITS;
+        xor128(block, L);
+        aes_xcrypt((state_t *)block, ctx->round_key, false);
+        memcpy(mac, block, AES_BLOCK_SIZE);
+        return;
+    }
+
     for (; length; length -= AES_BLOCK_SIZE) {
         if (length < AES_BLOCK_SIZE) {
             aes_generate_subkey(L);
