@@ -1,9 +1,10 @@
 /**
  * @file validation.c
  * @author Jason Conway (jpc@jasonconway.dev)
- * @version 2024.05
- * @date 2024-05-04
+ * @version 2025.12
+ * @date 2025-12-26
  * @ref https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf
+ * @ref https://datatracker.ietf.org/doc/html/rfc4493
  *
  * @copyright This example is free and unencumbered software released into the public domain.
  *
@@ -17,12 +18,25 @@
 
 #include "aes128.h"
 
+#define countof(a) (sizeof(a) / sizeof(*a))
+
+typedef struct test_case_t {
+    const char *name;
+    bool (*fn)(void);
+} test_case_t;
+
+typedef struct test_results_t {
+    size_t passed;
+    size_t failed;
+    size_t total;
+} test_results_t;
+
 static void xmemprint(const char *str, const uint8_t *src, size_t len)
 {
     printf("%-21s", str);
     for (size_t i = 0; i < len; i += 4) {
         char hex[] = "---------";
-        for (size_t j = 0; j < 4; j++) {
+        for (size_t j = 0; j < 4 && (j + i) < len; j++) {
             hex[2 * j + 0] = "0123456789abcdef"[src[j + i] >> 4];
             hex[2 * j + 1] = "0123456789abcdef"[src[j + i] & 15];
         }
@@ -33,9 +47,43 @@ static void xmemprint(const char *str, const uint8_t *src, size_t len)
     }
 }
 
-static bool test_encrypt(void)
+static void run_test(const test_case_t *test, test_results_t *results)
 {
-    printf("CBC-AES128.Encrypt\n");
+    bool ok = test->fn();
+
+    results->passed += ok;
+    results->failed += !ok;
+    results->total++;
+
+    printf("[%s] %s\n", ok ? "PASS" : "FAIL", test->name);
+}
+
+static void print_test_summary(const test_results_t *results)
+{
+    if (!results->failed) {
+        printf("\n================================\n");
+        printf("Test Results: %zu/%zu tests passed\n", results->passed, results->total);
+        printf("================================\n");
+    }
+    else {
+        printf("\n==============================================\n");
+        printf("Test Results: %zu/%zu tests passed (%zu failed)\n", results->passed, results->total, results->failed);
+        printf("==============================================\n");
+    }
+}
+
+static void error_print_expected(const uint8_t *expected, const uint8_t *got, size_t len)
+{
+    printf("  Expected: ");
+    xmemprint("", expected, len);
+    printf("  Got:      ");
+    xmemprint("", got, len);
+}
+
+// CBC Encryption Tests
+static bool test_cbc_encrypt_1block(void)
+{
+    // NIST SP 800-38A F.2.1 - First block only
     uint8_t key[] = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
@@ -46,7 +94,79 @@ static bool test_encrypt(void)
         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
     };
 
-    uint8_t chunk[] = {
+    uint8_t plaintext[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a
+    };
+
+    uint8_t expected[] = {
+        0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46,
+        0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d
+    };
+
+    aes128_t ctx;
+    aes128_init(&ctx, iv, key);
+    aes128_encrypt(&ctx, plaintext, 16);
+
+    bool ok = !memcmp(plaintext, expected, 16);
+    if (!ok) {
+        error_print_expected(expected, plaintext, 16);
+    }
+    return ok;
+}
+
+static bool test_cbc_encrypt_2blocks(void)
+{
+    // NIST SP 800-38A F.2.1 - First two blocks
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t iv[] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    };
+
+    uint8_t plaintext[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+        0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51
+    };
+
+    uint8_t expected[] = {
+        0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46,
+        0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d,
+        0x50, 0x86, 0xcb, 0x9b, 0x50, 0x72, 0x19, 0xee,
+        0x95, 0xdb, 0x11, 0x3a, 0x91, 0x76, 0x78, 0xb2
+    };
+
+    aes128_t ctx;
+    aes128_init(&ctx, iv, key);
+    aes128_encrypt(&ctx, plaintext, 32);
+
+    bool ok = !memcmp(plaintext, expected, 32);
+    if (!ok) {
+        error_print_expected(expected, plaintext, 32);
+    }
+    return ok;
+}
+
+static bool test_cbc_encrypt_4blocks(void)
+{
+    // NIST SP 800-38A F.2.1 - All four blocks
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t iv[] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    };
+
+    uint8_t plaintext[] = {
         0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
         0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
         0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
@@ -68,32 +188,21 @@ static bool test_encrypt(void)
         0x12, 0x0e, 0xca, 0x30, 0x75, 0x86, 0xe1, 0xa7
     };
 
-    xmemprint("key: ", key, sizeof(key));
-    xmemprint("iv: ", iv, sizeof(iv));
-    xmemprint("plaintext block 1: ", &chunk[0x00], 0x10);
-    xmemprint("plaintext block 2: ", &chunk[0x10], 0x10);
-    xmemprint("plaintext block 3: ", &chunk[0x20], 0x10);
-    xmemprint("plaintext block 4: ", &chunk[0x30], 0x10);
-
     aes128_t ctx;
     aes128_init(&ctx, iv, key);
-    aes128_encrypt(&ctx, chunk, 64);
+    aes128_encrypt(&ctx, plaintext, 64);
 
-    xmemprint("ciphertext block 1: ", &chunk[0x00], 0x10);
-    xmemprint("expected output: ", &expected[0x00], 0x10);
-    xmemprint("ciphertext block 2: ", &chunk[0x10], 0x10);
-    xmemprint("expected output: ", &expected[0x10], 0x10);
-    xmemprint("ciphertext block 3: ", &chunk[0x20], 0x10);
-    xmemprint("expected output: ", &expected[0x20], 0x10);
-    xmemprint("ciphertext block 4: ", &chunk[0x30], 0x10);
-    xmemprint("expected output: ", &expected[0x30], 0x10);
-    printf("\n");
-    return !memcmp(chunk, expected, 64);
+    bool ok = !memcmp(plaintext, expected, 64);
+    if (!ok) {
+        error_print_expected(expected, plaintext, 64);
+    }
+    return ok;
 }
 
-static bool test_decrypt(void)
+// CBC Decryption Tests
+static bool test_cbc_decrypt_1block(void)
 {
-    printf("CBC-AES128.Decrypt\n");
+    // NIST SP 800-38A F.2.2 - First block only
     uint8_t key[] = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
@@ -104,7 +213,79 @@ static bool test_decrypt(void)
         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
     };
 
-    uint8_t chunk[] = {
+    uint8_t ciphertext[] = {
+        0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46,
+        0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d
+    };
+
+    uint8_t expected[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a
+    };
+
+    aes128_t ctx;
+    aes128_init(&ctx, iv, key);
+    aes128_decrypt(&ctx, ciphertext, 16);
+
+    bool ok = !memcmp(ciphertext, expected, 16);
+    if (!ok) {
+        error_print_expected(expected, ciphertext, 16);
+    }
+    return ok;
+}
+
+static bool test_cbc_decrypt_2blocks(void)
+{
+    // NIST SP 800-38A F.2.2 - First two blocks
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t iv[] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    };
+
+    uint8_t ciphertext[] = {
+        0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46,
+        0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d,
+        0x50, 0x86, 0xcb, 0x9b, 0x50, 0x72, 0x19, 0xee,
+        0x95, 0xdb, 0x11, 0x3a, 0x91, 0x76, 0x78, 0xb2
+    };
+
+    uint8_t expected[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+        0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51
+    };
+
+    aes128_t ctx;
+    aes128_init(&ctx, iv, key);
+    aes128_decrypt(&ctx, ciphertext, 32);
+
+    bool ok = !memcmp(ciphertext, expected, 32);
+    if (!ok) {
+        error_print_expected(expected, ciphertext, 32);
+    }
+    return ok;
+}
+
+static bool test_cbc_decrypt_4blocks(void)
+{
+    // NIST SP 800-38A F.2.2 - All four blocks
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t iv[] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    };
+
+    uint8_t ciphertext[] = {
         0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46,
         0xce, 0xe9, 0x8e, 0x9b, 0x12, 0xe9, 0x19, 0x7d,
         0x50, 0x86, 0xcb, 0x9b, 0x50, 0x72, 0x19, 0xee,
@@ -126,32 +307,201 @@ static bool test_decrypt(void)
         0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10
     };
 
-    xmemprint("key: ", key, sizeof(key));
-    xmemprint("iv: ", iv, sizeof(iv));
-
-    xmemprint("ciphertext block 1: ", &chunk[0x00], 0x10);
-    xmemprint("ciphertext block 2: ", &chunk[0x10], 0x10);
-    xmemprint("ciphertext block 3: ", &chunk[0x20], 0x10);
-    xmemprint("ciphertext block 4: ", &chunk[0x30], 0x10);
-
     aes128_t ctx;
     aes128_init(&ctx, iv, key);
-    aes128_decrypt(&ctx, chunk, 64);
+    aes128_decrypt(&ctx, ciphertext, 64);
 
-    xmemprint("plaintext block 1:  ", &chunk[0x00], 0x10);
-    xmemprint("expected output: ", &expected[0x00], 0x10);
-    xmemprint("plaintext block 2:  ", &chunk[0x10], 0x10);
-    xmemprint("expected output: ", &expected[0x10], 0x10);
-    xmemprint("plaintext block 3:  ", &chunk[0x20], 0x10);
-    xmemprint("expected output: ", &expected[0x20], 0x10);
-    xmemprint("plaintext block 4:  ", &chunk[0x30], 0x10);
-    xmemprint("expected output: ", &expected[0x30], 0x10);
-
-    return !memcmp(chunk, expected, 64);
+    bool ok = !memcmp(ciphertext, expected, 64);
+    if (!ok) {
+        error_print_expected(expected, ciphertext, 64);
+    }
+    return ok;
 }
+
+static bool test_cmac_example1_empty(void)
+{
+    // RFC 4493 Example 1: Zero-length message
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t expected_mac[] = {
+        0xbb, 0x1d, 0x69, 0x29, 0xe9, 0x59, 0x37, 0x28,
+        0x7f, 0xa3, 0x7d, 0x12, 0x9b, 0x75, 0x67, 0x46
+    };
+
+    uint8_t mac[16];
+    uint8_t empty_msg[1];
+
+    aes128_t ctx;
+    aes128_init_cmac(&ctx, key);
+    aes128_cmac(&ctx, empty_msg, 0, mac);
+
+    bool ok = !memcmp(mac, expected_mac, 16);
+    if (!ok) {
+        error_print_expected(expected_mac, mac, 16);
+    }
+    return ok;
+}
+
+static bool test_cmac_example2_16bytes(void)
+{
+    // RFC 4493 Example 2: 16-byte message
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t message[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a
+    };
+
+    uint8_t expected_mac[] = {
+        0x07, 0x0a, 0x16, 0xb4, 0x6b, 0x4d, 0x41, 0x44,
+        0xf7, 0x9b, 0xdd, 0x9d, 0xd0, 0x4a, 0x28, 0x7c
+    };
+
+    uint8_t mac[16];
+
+    aes128_t ctx;
+    aes128_init_cmac(&ctx, key);
+    aes128_cmac(&ctx, message, 16, mac);
+
+    bool ok = !memcmp(mac, expected_mac, 16);
+    if (!ok) {
+        error_print_expected(expected_mac, mac, 16);
+    }
+    return ok;
+}
+
+static bool test_cmac_example3_40bytes(void)
+{
+    // RFC 4493 Example 3: 40-byte message
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t message[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+        0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+        0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11
+    };
+
+    uint8_t expected_mac[] = {
+        0xdf, 0xa6, 0x67, 0x47, 0xde, 0x9a, 0xe6, 0x30,
+        0x30, 0xca, 0x32, 0x61, 0x14, 0x97, 0xc8, 0x27
+    };
+
+    uint8_t mac[16];
+
+    aes128_t ctx;
+    aes128_init_cmac(&ctx, key);
+    aes128_cmac(&ctx, message, 40, mac);
+
+    bool ok = !memcmp(mac, expected_mac, 16);
+    if (!ok) {
+        error_print_expected(expected_mac, mac, 16);
+    }
+    return ok;
+}
+
+static bool test_cmac_example4_64bytes(void)
+{
+    // RFC 4493 Example 4: 64-byte message
+    uint8_t key[] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+
+    uint8_t message[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+        0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+        0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
+        0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef,
+        0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+        0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10
+    };
+
+    uint8_t expected_mac[] = {
+        0x51, 0xf0, 0xbe, 0xbf, 0x7e, 0x3b, 0x9d, 0x92,
+        0xfc, 0x49, 0x74, 0x17, 0x79, 0x36, 0x3c, 0xfe
+    };
+
+    uint8_t mac[16];
+
+    aes128_t ctx;
+    aes128_init_cmac(&ctx, key);
+    aes128_cmac(&ctx, message, 64, mac);
+
+    bool ok = !memcmp(mac, expected_mac, 16);
+    if (!ok) {
+        error_print_expected(expected_mac, mac, 16);
+    }
+    return ok;
+}
+
+static const test_case_t tests[] = {
+    [0] = {
+        .name = "CBC-AES128.Encrypt.1Block",
+        .fn = test_cbc_encrypt_1block
+    },
+    [1] = {
+        .name = "CBC-AES128.Encrypt.2Blocks",
+        .fn = test_cbc_encrypt_2blocks
+    },
+    [2] = {
+        .name = "CBC-AES128.Encrypt.4Blocks",
+        .fn = test_cbc_encrypt_4blocks
+    },
+    [3] = {
+        .name = "CBC-AES128.Decrypt.1Block",
+        .fn = test_cbc_decrypt_1block
+    },
+    [4] = {
+        .name = "CBC-AES128.Decrypt.2Blocks",
+        .fn = test_cbc_decrypt_2blocks
+    },
+    [5] = {
+        .name = "CBC-AES128.Decrypt.4Blocks",
+        .fn = test_cbc_decrypt_4blocks
+    },
+    [6] = {
+        .name = "AES-CMAC.Example1.Empty",
+        .fn = test_cmac_example1_empty
+    },
+    [7] = {
+        .name = "AES-CMAC.Example2.16Bytes",
+        .fn = test_cmac_example2_16bytes
+    },
+    [8] = {
+        .name = "AES-CMAC.Example3.40Bytes",
+        .fn = test_cmac_example3_40bytes
+    },
+    [9] = {
+        .name = "AES-CMAC.Example4.64Bytes",
+        .fn = test_cmac_example4_64bytes
+     }
+};
 
 int main(void)
 {
-    assert(test_encrypt() && test_decrypt());
-    return 0;
+    printf("AES-128 Validation Tests:\n");
+    printf("=========================\n\n");
+
+    test_results_t res = { 0 };
+
+    for (size_t i = 0; i < countof(tests); i++) {
+        run_test(&tests[i], &res);
+    }
+
+    print_test_summary(&res);
+
+    return !!res.failed;
 }
